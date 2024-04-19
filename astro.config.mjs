@@ -7,5 +7,10 @@ import tailwind from "@astrojs/tailwind";
 export default defineConfig({
   integrations: [react(), tailwind({
     applyBaseStyles: false,
-  })]
+  })],
+  vite: {
+    server: {
+      host: "0.0.0.0",
+    }
+  }
 });

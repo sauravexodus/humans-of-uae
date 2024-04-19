@@ -1,0 +1,36 @@
+---
+import RegisterForm from "@/components/RegisterForm";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Layout from "@/layouts/Layout.astro";
+---
+
+<Layout>
+  <Card>
+    <CardHeader>
+      <CardTitle>Register yourself</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <RegisterForm client:only="react" />
+    </CardContent>
+  </Card>
+  <div id="recaptacha-container"></div>
+</Layout>
+
+<script>
+  import { app } from "@/lib/initializeFirebase";
+  import { getAuth, RecaptchaVerifier } from "firebase/auth";
+  const auth = getAuth(app);
+  import { authStore } from "@/stores/authStore";
+
+  const recaptchaVerifier = new RecaptchaVerifier(
+    auth,
+    "recaptacha-container",
+    {
+      size: "invisible",
+      callback: () => {
+        authStore.setKey("recaptchaVerifier", recaptchaVerifier);
+      },
+    }
+  );
+  authStore.setKey("recaptchaVerifier", recaptchaVerifier);
+</script>
