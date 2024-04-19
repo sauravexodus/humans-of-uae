@@ -25,7 +25,7 @@ import { Label } from "./ui/label";
 const _ProfileNeedHelp = () => {
   const [center, setCenter] = useState({ lng: 55.3719379, lat: 25.3132839 });
   const [zoom, setZoom] = useState(15);
-  const [user, setUser] = useState<UserInfo | null>(null);
+  const [user, setUser] = useState<UserInfo>();
   const [situation, setSituation] = useState<string>();
   const [offer, setOffer] = useState<string>();
   const currentLocation = useGeolocation({
@@ -34,6 +34,11 @@ const _ProfileNeedHelp = () => {
 
   useEffect(() => {
     getAuth(app).onAuthStateChanged((user) => {
+      if (!user) {
+        location.pathname = "/";
+        toast("Please sign in");
+        return;
+      }
       setUser(user);
     });
   }, []);
