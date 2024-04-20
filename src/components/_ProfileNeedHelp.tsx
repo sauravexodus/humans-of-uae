@@ -9,22 +9,24 @@ import { Button } from "./ui/button";
 import { app } from "@/lib/initializeFirebase";
 import {
   collection,
+  deleteField,
   doc,
   getFirestore,
   onSnapshot,
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
-import { getAuth, type UserInfo } from "firebase/auth";
+import { getAuth, updateProfile, type User } from "firebase/auth";
 import { geohashForLocation } from "geofire-common";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Label } from "./ui/label";
+import { Input } from "./ui/input";
 
 const _ProfileNeedHelp = () => {
   const [center, setCenter] = useState({ lng: 55.3719379, lat: 25.3132839 });
   const [zoom, setZoom] = useState(15);
-  const [user, setUser] = useState<UserInfo>();
+  const [user, setUser] = useState<User>();
   const [situation, setSituation] = useState<string>();
   const [offer, setOffer] = useState<string>();
   const currentLocation = useGeolocation({
@@ -64,14 +66,21 @@ const _ProfileNeedHelp = () => {
   const { isPending: isPendingHelpRequest, mutate: requestHelp } = useMutation({
     mutationFn: async (formData: FormData) => {
       const situation = formData.get("situation") as string;
+      const name = formData.get("name") as string;
       if (!user) {
         toast.error("You are not signed in");
+        return;
+      }
+      if (!name || name.length < 3) {
+        toast.warning("Please enter your name");
         return;
       }
       if (!situation || situation.length < 10) {
         toast.warning("Please describe your situation in a few words");
         return;
       }
+      await updateProfile(user, { displayName: name });
+      setUser(getAuth().currentUser!);
       await setDoc(
         doc(collection(getFirestore(), "users"), user.uid),
         {
@@ -80,6 +89,7 @@ const _ProfileNeedHelp = () => {
           lng: center.lng,
           situation: situation,
           mobile: user?.phoneNumber,
+          name: name,
           updatedAt: serverTimestamp(),
         },
         {
@@ -122,6 +132,19 @@ const _ProfileNeedHelp = () => {
     },
   });
 
+  const { mutate: stopOffering, isPending: isPendingStopOffer } = useMutation({
+    mutationFn: async () => {
+      if (!user) {
+        return;
+      }
+      await setDoc(doc(collection(getFirestore(), "users"), user.uid), {
+        offer: deleteField(),
+      });
+      setOffer(undefined);
+      toast.success("You are no longer offering help");
+    },
+  });
+
   return (
     <Tabs defaultValue="need-help" className="w-full">
       <TabsList className="w-full">
@@ -139,7 +162,7 @@ const _ProfileNeedHelp = () => {
         </TabsTrigger>
       </TabsList>
       <TabsContent value="need-help">
-        <div className="flex flex-col gap-y-4 mt-8">
+        <div className="flex flex-col gap-y-4 my-8">
           <div className="flex items-center justify-between">
             <p className="text-sm">Your location:</p>
             <Button
@@ -179,7 +202,14 @@ const _ProfileNeedHelp = () => {
               requestHelp(new FormData(event.currentTarget));
             }}>
             <div className="grid gap-1.5">
-              <Label htmlFor="message">Describe your situation</Label>
+              <Label htmlFor="name">Name</Label>
+              <Input
+                name="name"
+                defaultValue={user?.displayName ?? ""}
+                required></Input>
+              <Label htmlFor="message" className="mt-4">
+                Describe your situation
+              </Label>
               <Textarea
                 name="situation"
                 value={situation}
@@ -188,6 +218,8 @@ const _ProfileNeedHelp = () => {
                 }
                 placeholder="For e.g I've been stranded since 16th April without water"
                 id="message"
+                minLength={10}
+                required
               />
             </div>
             <Button type="submit" disabled={isPendingHelpRequest}>
@@ -216,6 +248,15 @@ const _ProfileNeedHelp = () => {
             Offer Support
           </Button>
         </form>
+        {offer && offer.length > 10 && (
+          <Button
+            onClick={() => stopOffering()}
+            disabled={isPendingStopOffer}
+            className="w-full mt-2"
+            variant="destructive">
+            Stop Offering
+          </Button>
+        )}
       </TabsContent>
     </Tabs>
   );

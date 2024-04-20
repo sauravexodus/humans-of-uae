@@ -14,20 +14,36 @@ import { useStore } from "@nanostores/react";
 import { app } from "@/lib/initializeFirebase";
 import {
   Timestamp,
+  arrayUnion,
   collection,
+  doc,
   endAt,
   getDocs,
   getFirestore,
   orderBy,
   query,
+  setDoc,
   startAt,
 } from "firebase/firestore";
 import { distanceBetween, geohashQueryBounds } from "geofire-common";
-import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import {
+  QueryClientProvider,
+  useMutation,
+  useQuery,
+} from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { useDebounce } from "@uidotdev/usehooks";
-import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
-import { getAuth, type UserInfo } from "firebase/auth";
+import {
+  Card,
+  CardHeader,
+  CardContent,
+  CardTitle,
+  CardFooter,
+  CardDescription,
+} from "@/components/ui/card";
+import { getAuth, type User as FirebaseUser } from "firebase/auth";
+import { Button } from "./ui/button";
+import { toast } from "sonner";
 
 interface MapPreferences {
   showNeedy: boolean;
@@ -35,11 +51,14 @@ interface MapPreferences {
 }
 
 interface User {
+  name: string;
+  mobile: string;
   geohash: string;
   lat: number;
   lng: number;
   offer?: string;
   situation?: string;
+  volunteers?: Pick<User, "name" | "mobile">[];
   updatedAt: Timestamp;
   resolvedAt?: Timestamp;
 }
@@ -64,7 +83,7 @@ function MapWrapper() {
   const [bounds, setBounds] = useState<google.maps.LatLngBoundsLiteral>();
   const [selectedUser, setSelectedUser] = useState<NeedyOrVolunteer>();
   const { showNeedy, showVolunteers } = useStore(store);
-  const [user, setUser] = useState<UserInfo | null>();
+  const [user, setUser] = useState<FirebaseUser | null>();
 
   useEffect(() => {
     getAuth(app).onAuthStateChanged((user) => {
@@ -95,7 +114,7 @@ function MapWrapper() {
       .join(":"),
     500
   );
-  const { data } = useQuery({
+  const { data, refetch: invalidatePoints } = useQuery({
     queryKey: ["bounds", queryKeys],
     enabled: !!bounds,
     queryFn: async () => {
@@ -138,7 +157,7 @@ function MapWrapper() {
 
   const needy = useMemo(() => {
     if (!showNeedy || !data) return [];
-    return data.filter((it) => it.situation && !it.resolvedAt);
+    return data.filter((it) => it.situation);
   }, [data, showNeedy]);
 
   const volunteers = useMemo(() => {
@@ -167,6 +186,69 @@ function MapWrapper() {
     }
   }, [selectedUser]);
 
+  const { mutate: commitToHelp, isPending: isCommittingToHelp } = useMutation({
+    mutationFn: async () => {
+      if (!user) {
+        return;
+      }
+      await setDoc(
+        doc(collection(getFirestore(), "users"), user.uid),
+        {
+          volunteers: arrayUnion({
+            name: user.displayName,
+            uid: user.uid,
+            mobile: user.phoneNumber,
+          }),
+          resolvedAt: Timestamp.now(),
+        },
+        { merge: true }
+      );
+      toast.success("Thank you for helping!");
+      invalidatePoints();
+    },
+  });
+
+  const cardContent = useMemo(() => {
+    if (!selectedUser) {
+      return null;
+    }
+    if (selectedUser.type === "needy") {
+      return (
+        <>
+          <p>Situation: {selectedUser.needy.situation}</p>
+          <p className="font-semibold text-xl mt-8 mb-2">
+            Who has committed to help
+          </p>
+          {selectedUser.needy.volunteers?.map((volunteer) => (
+            <p className="text-sm">
+              {volunteer.name} ({volunteer.mobile})
+            </p>
+          )) ?? (
+            <p className="text-sm text-foreground/60">
+              No one has committed yet
+            </p>
+          )}
+          <Button
+            disabled={isCommittingToHelp}
+            onClick={() => commitToHelp()}
+            className="mt-4 w-full">
+            🤝 Commit to Help
+          </Button>
+        </>
+      );
+    } else if (selectedUser.type === "volunteer") {
+      return (
+        <>
+          <p className="text-foreground/60 text-sm">Offering</p>
+          <p>{selectedUser.volunteer.offer}</p>
+          <a href={`tel:${selectedUser.volunteer.mobile}`}>
+            <Button className="mt-8 w-full">Call for Help</Button>
+          </a>
+        </>
+      );
+    }
+  }, [selectedUser]);
+
   return (
     <>
       <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl">
@@ -183,7 +265,8 @@ function MapWrapper() {
             }}
             checked={showNeedy}
           />
-          <Label className="font-bold">❤️‍🩹 People in need:</Label> {needy.length}
+          <Label className="font-bold">❤️‍🩹 People in need:</Label>{" "}
+          {data?.filter((it) => it.situation)?.length ?? 0}
         </div>
         <div className="flex items-center gap-x-2">
           <Switch
@@ -193,7 +276,7 @@ function MapWrapper() {
             checked={showVolunteers}
           />
           <Label className="font-bold">💪 People volunteering:</Label>{" "}
-          {volunteers.length}
+          {data?.filter((it) => it.offer)?.length ?? 0}
         </div>
       </div>
       <Map
@@ -239,20 +322,19 @@ function MapWrapper() {
         <Card>
           <CardHeader>
             <CardTitle>{header}</CardTitle>
+            <CardDescription className="capitalize">
+              {selectedUser.type}
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <p>
-              {selectedUser.type === "needy"
-                ? selectedUser.needy.situation
-                : selectedUser.volunteer.offer}
-            </p>
-            <p className="text-xs mt-2 italic text-foreground/70">
+          <CardContent>{cardContent}</CardContent>
+          <CardFooter>
+            <p className="text-xs italic text-foreground/70">
               Updated:{" "}
               {DateTime.fromJSDate(
                 _selectedUser.updatedAt.toDate()
               ).toRelative()}
             </p>
-          </CardContent>
+          </CardFooter>
         </Card>
       )}
     </>
