@@ -9,6 +9,7 @@ import { Button } from "./ui/button";
 import { app } from "@/lib/initializeFirebase";
 import {
   collection,
+  deleteDoc,
   deleteField,
   doc,
   getFirestore,
@@ -150,120 +151,142 @@ const _ProfileNeedHelp = () => {
     },
   });
 
-  return (
-    <Tabs defaultValue="need-help" className="w-full">
-      <TabsList className="w-full">
-        <TabsTrigger
-          disabled={isPendingHelpOffer}
-          className="w-full"
-          value="need-help">
-          ❤️‍🩹 Need Help
-        </TabsTrigger>
-        <TabsTrigger
-          disabled={isPendingHelpRequest}
-          className="w-full"
-          value="support">
-          💪 Support Others
-        </TabsTrigger>
-      </TabsList>
-      <TabsContent value="need-help">
-        <div className="flex flex-col gap-y-4 my-8">
-          <div className="flex items-center justify-between">
-            <p className="text-sm">Your location:</p>
-            <Button
-              onClick={() => {
-                if (!currentLocation.latitude || !currentLocation.longitude)
-                  return;
-                setCenter({
-                  lat: currentLocation.latitude,
-                  lng: currentLocation.longitude,
-                });
-              }}>
-              Refresh
-            </Button>
-          </div>
+  const { mutate: deleteAccount, isPending: isPendingDeleteAccount } =
+    useMutation({
+      mutationFn: async () => {
+        if (!user) {
+          return;
+        }
+        await deleteDoc(doc(getFirestore(), "users", user.uid));
+        await user.delete();
+        toast.success("Your account has been deleted");
+        location.pathname = "/";
+      },
+    });
 
-          <Map
-            disableDefaultUI
-            className="h-96"
-            styles={darkModeStyles}
-            center={center}
-            onCenterChanged={({ detail: { center } }) => {
-              setCenter(center);
-            }}
-            zoom={zoom}
-            onZoomChanged={({ detail: { zoom } }) => setZoom(zoom)}>
-            <Marker
-              position={{
-                lng: center.lng,
-                lat: center.lat,
+  return (
+    <>
+      <Tabs defaultValue="need-help" className="w-full">
+        <TabsList className="w-full">
+          <TabsTrigger
+            disabled={isPendingHelpOffer}
+            className="w-full"
+            value="need-help">
+            ❤️‍🩹 Need Help
+          </TabsTrigger>
+          <TabsTrigger
+            disabled={isPendingHelpRequest}
+            className="w-full"
+            value="support">
+            💪 Support Others
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="need-help">
+          <div className="flex flex-col gap-y-4 mt-8">
+            <div className="flex items-center justify-between">
+              <p className="text-sm">Your location:</p>
+              <Button
+                onClick={() => {
+                  if (!currentLocation.latitude || !currentLocation.longitude)
+                    return;
+                  setCenter({
+                    lat: currentLocation.latitude,
+                    lng: currentLocation.longitude,
+                  });
+                }}>
+                Refresh
+              </Button>
+            </div>
+            <Map
+              disableDefaultUI
+              className="h-96"
+              styles={darkModeStyles}
+              center={center}
+              onCenterChanged={({ detail: { center } }) => {
+                setCenter(center);
               }}
-            />
-          </Map>
+              zoom={zoom}
+              onZoomChanged={({ detail: { zoom } }) => setZoom(zoom)}>
+              <Marker
+                position={{
+                  lng: center.lng,
+                  lat: center.lat,
+                }}
+              />
+            </Map>
+            <form
+              className="flex flex-col items-stretch gap-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                requestHelp(new FormData(event.currentTarget));
+              }}>
+              <div className="grid gap-1.5">
+                <Label htmlFor="name">Name</Label>
+                <Input
+                  name="name"
+                  defaultValue={user?.displayName ?? ""}
+                  required></Input>
+                <Label htmlFor="message" className="mt-4">
+                  Describe your situation
+                </Label>
+                <Textarea
+                  name="situation"
+                  value={situation}
+                  onInput={({ target }) =>
+                    setSituation((target as HTMLInputElement).value)
+                  }
+                  placeholder="For e.g I've been stranded since 16th April without water"
+                  id="message"
+                  minLength={10}
+                  required
+                />
+              </div>
+              <Button type="submit" disabled={isPendingHelpRequest}>
+                Submit for help
+              </Button>
+            </form>
+          </div>
+        </TabsContent>
+        <TabsContent value="support">
           <form
-            className="flex flex-col items-stretch gap-y-4"
             onSubmit={(event) => {
               event.preventDefault();
-              requestHelp(new FormData(event.currentTarget));
-            }}>
-            <div className="grid gap-1.5">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                name="name"
-                defaultValue={user?.displayName ?? ""}
-                required></Input>
-              <Label htmlFor="message" className="mt-4">
-                Describe your situation
-              </Label>
-              <Textarea
-                name="situation"
-                value={situation}
-                onInput={({ target }) =>
-                  setSituation((target as HTMLInputElement).value)
-                }
-                placeholder="For e.g I've been stranded since 16th April without water"
-                id="message"
-                minLength={10}
-                required
-              />
-            </div>
+              offerHelp(new FormData(event.currentTarget));
+            }}
+            className="flex flex-col items-stretch gap-y-4">
+            <Textarea
+              className="mt-4"
+              name="offer"
+              rows={20}
+              value={offer ?? ""}
+              onInput={({ target }) =>
+                setOffer((target as HTMLInputElement).value)
+              }
+              placeholder="Describe how you can support others"></Textarea>
             <Button type="submit" disabled={isPendingHelpRequest}>
-              Submit for help
+              Offer Support
             </Button>
           </form>
-        </div>
-      </TabsContent>
-      <TabsContent value="support">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            offerHelp(new FormData(event.currentTarget));
-          }}
-          className="flex flex-col items-stretch gap-y-4">
-          <Textarea
-            className="mt-4"
-            name="offer"
-            rows={20}
-            value={offer ?? ""}
-            onInput={({ target }) =>
-              setOffer((target as HTMLInputElement).value)
-            }
-            placeholder="Describe how you can support others"></Textarea>
-          <Button type="submit" disabled={isPendingHelpRequest}>
-            Offer Support
-          </Button>
-        </form>
-        {offer && offer.length > 10 && (
-          <Button
-            onClick={() => stopOffering()}
-            disabled={isPendingStopOffer}
-            className="w-full mt-2"
-            variant="destructive">
-            Stop Offering
-          </Button>
-        )}
-      </TabsContent>
-    </Tabs>
+          {offer && offer.length > 10 && (
+            <Button
+              onClick={() => stopOffering()}
+              disabled={isPendingStopOffer}
+              className="w-full mt-2"
+              variant="destructive">
+              Stop Offering
+            </Button>
+          )}
+        </TabsContent>
+      </Tabs>
+      <Button
+        className="mt-4 mb-4"
+        variant="destructive"
+        onClick={() => deleteAccount()}
+        disabled={isPendingDeleteAccount}>
+        Delete Account
+      </Button>
+      <br />
+    </>
   );
 };
 

@@ -172,7 +172,7 @@ function MapWrapper() {
 
   const header = useMemo(() => {
     if (!user) {
-      return "Register yourself";
+      return "Still New?";
     }
 
     return user.displayName ?? "User Details";
@@ -210,7 +210,11 @@ function MapWrapper() {
 
   const cardContent = useMemo(() => {
     if (!selectedUser) {
-      return null;
+      return (
+        <a href="/register" className="w-full">
+          <Button className="w-full">Register</Button>
+        </a>
+      );
     }
     if (selectedUser.type === "needy") {
       return (
@@ -318,15 +322,17 @@ function MapWrapper() {
           </AdvancedMarker>
         ))}
       </Map>
-      {user !== undefined && _selectedUser && selectedUser && (
-        <Card>
-          <CardHeader>
-            <CardTitle>{header}</CardTitle>
+      <Card>
+        <CardHeader>
+          <CardTitle>{header}</CardTitle>
+          {selectedUser?.type && (
             <CardDescription className="capitalize">
               {selectedUser.type}
             </CardDescription>
-          </CardHeader>
-          <CardContent>{cardContent}</CardContent>
+          )}
+        </CardHeader>
+        <CardContent>{cardContent}</CardContent>
+        {_selectedUser && (
           <CardFooter>
             <p className="text-xs italic text-foreground/70">
               Updated:{" "}
@@ -335,8 +341,8 @@ function MapWrapper() {
               ).toRelative()}
             </p>
           </CardFooter>
-        </Card>
-      )}
+        )}
+      </Card>
     </>
   );
 }
