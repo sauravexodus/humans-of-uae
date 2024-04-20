@@ -5,29 +5,60 @@ import {
   Pin,
   useMap,
 } from "@vis.gl/react-google-maps";
-import React, { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Duration } from "luxon";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { map } from "nanostores";
+import { persistentMap } from "@nanostores/persistent";
 import { useStore } from "@nanostores/react";
 import { app } from "@/lib/initializeFirebase";
+import {
+  Timestamp,
+  collection,
+  endAt,
+  getDocs,
+  getFirestore,
+  orderBy,
+  query,
+  startAt,
+} from "firebase/firestore";
+import { distanceBetween, geohashQueryBounds } from "geofire-common";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
+import { useDebounce } from "@uidotdev/usehooks";
 
 interface MapPreferences {
   showNeedy: boolean;
   showVolunteers: boolean;
 }
 
-const store = map<MapPreferences>({
-  showNeedy: true,
-  showVolunteers: false,
-});
+interface User {
+  geohash: string;
+  lat: number;
+  lng: number;
+  offer?: string;
+  situation?: string;
+  updatedAt: Timestamp;
+  resolvedAt?: Timestamp;
+}
+
+const store = persistentMap<MapPreferences>(
+  "preferences:",
+  {
+    showNeedy: true,
+    showVolunteers: false,
+  },
+  { encode: JSON.stringify, decode: JSON.parse }
+);
+
+type NeedyOrVolunteer = { needy: User } | { volunteer: User };
 
 function MapWrapper() {
   const map = useMap();
   const [center, setCenter] = useState({ lng: 55.3719379, lat: 25.3132839 });
-  const [zoom, setZoom] = useState(15);
+  const [zoom, setZoom] = useState(13);
   const [bounds, setBounds] = useState<google.maps.LatLngBoundsLiteral>();
+  const [selectedUser, setSelectedUser] = useState<NeedyOrVolunteer>();
   const { showNeedy, showVolunteers } = useStore(store);
 
   useEffect(() => {
@@ -47,49 +78,67 @@ function MapWrapper() {
     );
   }, []);
 
-  return (
-    <Map
-      mapId="humans-of-uae"
-      disableDefaultUI
-      styles={darkModeStyles}
-      className="my-4 flex-1 rounded-xl"
-      center={center}
-      onCenterChanged={({ detail: { center } }) => {
-        setCenter(center);
-      }}
-      zoom={zoom}
-      onZoomChanged={({ detail: { zoom } }) => setZoom(zoom)}
-      onBoundsChanged={({ detail: { bounds } }) => {
-        setBounds(bounds);
-      }}>
-      <AdvancedMarker position={{ lat: 25.3197285, lng: 55.3751033 }}>
-        <Pin
-          background={"#FFFFFF"}
-          glyphColor={"white"}
-          glyph={"❤️‍🩹"}
-          borderColor={"#8C2E2C"}
-        />
-      </AdvancedMarker>
-    </Map>
+  const queryKeys = useDebounce(
+    [bounds?.north, bounds?.east, center.lat, center.lat]
+      .filter((it) => !!it)
+      .join(":"),
+    500
   );
-}
-
-export default function HomeMap() {
-  useEffect(() => {
-    app;
-  }, []);
-
-  const onSubmit: React.FormEventHandler<HTMLFormElement> = useCallback(
-    (event) => {
-      event.preventDefault();
-      const formData = new FormData(event.currentTarget);
-      store.set({
-        showNeedy: formData.get("showNeedy") === "on",
-        showVolunteers: formData.get("showVolunteers") === "on",
+  const { data } = useQuery({
+    queryKey: ["bounds", queryKeys],
+    enabled: !!bounds,
+    queryFn: async () => {
+      if (!bounds) {
+        return [];
+      }
+      const radius = distanceBetween(
+        [bounds.north, bounds.east],
+        [center.lat, center.lng]
+      );
+      const db = getFirestore(app);
+      const geohashQuery = geohashQueryBounds(
+        [center.lat, center.lng],
+        radius * 1000
+      );
+      const promises = geohashQuery.map(([startsAt, endsAt]) => {
+        return getDocs(
+          query(
+            collection(db, "users"),
+            orderBy("geohash"),
+            startAt(startsAt),
+            endAt(endsAt)
+          )
+        );
       });
+
+      try {
+        const snapshots = await Promise.all(promises);
+        const documents = snapshots
+          .flatMap((it) => it.docs)
+          .filter((it) => it.exists())
+          .map((it) => it.data() as User);
+        return documents;
+      } catch (error) {
+        console.error(error);
+        return [];
+      }
     },
-    []
-  );
+  });
+
+  const needy = useMemo(() => {
+    if (!showNeedy || !data) return [];
+    return data.filter((it) => it.situation && !it.resolvedAt);
+  }, [data, showNeedy]);
+
+  const volunteers = useMemo(() => {
+    if (!showVolunteers || !data) return [];
+    return data.filter((it) => it.offer);
+  }, [data, showVolunteers]);
+
+  useEffect(() => {
+    if (!map) return;
+    map.notify("markers");
+  }, [needy.length, volunteers.length]);
 
   return (
     <>
@@ -99,101 +148,76 @@ export default function HomeMap() {
       <p className="leading-7 [&:not(:first-child)]:mt-6">
         Find out who needs help and who is volunteering.
       </p>
-      <form onChange={onSubmit} className="flex flex-col my-3 gap-y-3">
+      <div className="flex flex-col my-3 gap-y-3">
         <div className="flex items-center gap-x-2">
-          <Switch name="showNeedy" />
-          <Label className="font-bold">❤️‍🩹 People in need:</Label> 2300
+          <Switch
+            onCheckedChange={() => {
+              store.setKey("showNeedy", !showNeedy);
+            }}
+            checked={showNeedy}
+          />
+          <Label className="font-bold">❤️‍🩹 People in need:</Label> {needy.length}
         </div>
         <div className="flex items-center gap-x-2">
-          <Switch name="showVolunteers" />
-          <Label className="font-bold">💪 People volunteering:</Label> 47
+          <Switch
+            onCheckedChange={() =>
+              store.setKey("showVolunteers", !showVolunteers)
+            }
+            checked={showVolunteers}
+          />
+          <Label className="font-bold">💪 People volunteering:</Label>{" "}
+          {volunteers.length}
         </div>
-      </form>
-
-      <APIProvider apiKey={import.meta.env.PUBLIC_MAPS_API_KEY}>
-        <MapWrapper />
-      </APIProvider>
+      </div>
+      <Map
+        mapId="humans-of-uae"
+        disableDefaultUI
+        className="my-4 flex-1 rounded-xl"
+        center={center}
+        onCenterChanged={({ detail: { center } }) => {
+          setCenter(center);
+        }}
+        zoom={zoom}
+        onZoomChanged={({ detail: { zoom } }) => setZoom(zoom)}
+        onBoundsChanged={({ detail: { bounds } }) => {
+          setBounds(bounds);
+        }}>
+        {needy.map((user) => (
+          <AdvancedMarker
+            key={user.geohash}
+            position={{ lat: user.lat, lng: user.lng }}
+            onClick={() => {
+              setSelectedUser({ needy: user });
+            }}>
+            <Pin />
+          </AdvancedMarker>
+        ))}
+        {volunteers.map((user) => (
+          <AdvancedMarker
+            key={user.geohash}
+            position={{ lat: user.lat, lng: user.lng }}
+            onClick={() => {
+              setSelectedUser({ volunteer: user });
+            }}>
+            {/* Use green pin */}
+            <Pin
+              background={"lightgreen"}
+              borderColor={"green"}
+              glyphColor={"green"}
+            />
+          </AdvancedMarker>
+        ))}
+      </Map>
     </>
   );
 }
 
-const darkModeStyles: google.maps.MapTypeStyle[] = [
-  { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
-  {
-    featureType: "administrative.locality",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#d59563" }],
-  },
-  {
-    featureType: "poi",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#d59563" }],
-  },
-  {
-    featureType: "poi.park",
-    elementType: "geometry",
-    stylers: [{ color: "#263c3f" }],
-  },
-  {
-    featureType: "poi.park",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#6b9a76" }],
-  },
-  {
-    featureType: "road",
-    elementType: "geometry",
-    stylers: [{ color: "#38414e" }],
-  },
-  {
-    featureType: "road",
-    elementType: "geometry.stroke",
-    stylers: [{ color: "#212a37" }],
-  },
-  {
-    featureType: "road",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#9ca5b3" }],
-  },
-  {
-    featureType: "road.highway",
-    elementType: "geometry",
-    stylers: [{ color: "#746855" }],
-  },
-  {
-    featureType: "road.highway",
-    elementType: "geometry.stroke",
-    stylers: [{ color: "#1f2835" }],
-  },
-  {
-    featureType: "road.highway",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#f3d19c" }],
-  },
-  {
-    featureType: "transit",
-    elementType: "geometry",
-    stylers: [{ color: "#2f3948" }],
-  },
-  {
-    featureType: "transit.station",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#d59563" }],
-  },
-  {
-    featureType: "water",
-    elementType: "geometry",
-    stylers: [{ color: "#17263c" }],
-  },
-  {
-    featureType: "water",
-    elementType: "labels.text.fill",
-    stylers: [{ color: "#515c6d" }],
-  },
-  {
-    featureType: "water",
-    elementType: "labels.text.stroke",
-    stylers: [{ color: "#17263c" }],
-  },
-];
+export default function HomeMap() {
+  return (
+    <APIProvider apiKey={import.meta.env.PUBLIC_MAPS_API_KEY}>
+      <QueryClientProvider client={queryClient}>
+        <MapWrapper />
+      </QueryClientProvider>
+    </APIProvider>
+  );
+}

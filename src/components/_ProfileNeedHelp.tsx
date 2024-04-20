@@ -79,6 +79,7 @@ const _ProfileNeedHelp = () => {
           lat: center.lat,
           lng: center.lng,
           situation: situation,
+          mobile: user?.phoneNumber,
           updatedAt: serverTimestamp(),
         },
         {
@@ -107,6 +108,7 @@ const _ProfileNeedHelp = () => {
         doc(collection(getFirestore(), "users"), user.uid),
         {
           offer: offer,
+          mobile: user?.phoneNumber,
           updatedAt: serverTimestamp(),
         },
         {

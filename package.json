@@ -13,6 +13,7 @@
     "@astrojs/check": "^0.5.10",
     "@astrojs/react": "^3.3.0",
     "@astrojs/tailwind": "^5.1.0",
+    "@nanostores/persistent": "^0.10.1",
     "@nanostores/react": "^0.7.2",
     "@radix-ui/react-label": "^2.0.2",
     "@radix-ui/react-slot": "^1.0.2",
