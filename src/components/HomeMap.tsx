@@ -6,7 +6,7 @@ import {
   useMap,
 } from "@vis.gl/react-google-maps";
 import { useEffect, useMemo, useState } from "react";
-import { Duration } from "luxon";
+import { DateTime, Duration } from "luxon";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { persistentMap } from "@nanostores/persistent";
@@ -26,6 +26,8 @@ import { distanceBetween, geohashQueryBounds } from "geofire-common";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { useDebounce } from "@uidotdev/usehooks";
+import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
+import { getAuth, type UserInfo } from "firebase/auth";
 
 interface MapPreferences {
   showNeedy: boolean;
@@ -51,7 +53,9 @@ const store = persistentMap<MapPreferences>(
   { encode: JSON.stringify, decode: JSON.parse }
 );
 
-type NeedyOrVolunteer = { needy: User } | { volunteer: User };
+type NeedyOrVolunteer =
+  | { type: "needy"; needy: User }
+  | { type: "volunteer"; volunteer: User };
 
 function MapWrapper() {
   const map = useMap();
@@ -60,6 +64,13 @@ function MapWrapper() {
   const [bounds, setBounds] = useState<google.maps.LatLngBoundsLiteral>();
   const [selectedUser, setSelectedUser] = useState<NeedyOrVolunteer>();
   const { showNeedy, showVolunteers } = useStore(store);
+  const [user, setUser] = useState<UserInfo | null>();
+
+  useEffect(() => {
+    getAuth(app).onAuthStateChanged((user) => {
+      setUser(user);
+    });
+  }, []);
 
   useEffect(() => {
     if (!map) return;
@@ -140,6 +151,22 @@ function MapWrapper() {
     map.notify("markers");
   }, [needy.length, volunteers.length]);
 
+  const header = useMemo(() => {
+    if (!user) {
+      return "Register yourself";
+    }
+
+    return user.displayName ?? "User Details";
+  }, [user]);
+
+  const _selectedUser = useMemo(() => {
+    if (selectedUser?.type === "needy") {
+      return selectedUser.needy;
+    } else if (selectedUser?.type === "volunteer") {
+      return selectedUser.volunteer;
+    }
+  }, [selectedUser]);
+
   return (
     <>
       <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl">
@@ -187,7 +214,7 @@ function MapWrapper() {
             key={user.geohash}
             position={{ lat: user.lat, lng: user.lng }}
             onClick={() => {
-              setSelectedUser({ needy: user });
+              setSelectedUser({ type: "needy", needy: user });
             }}>
             <Pin />
           </AdvancedMarker>
@@ -197,7 +224,7 @@ function MapWrapper() {
             key={user.geohash}
             position={{ lat: user.lat, lng: user.lng }}
             onClick={() => {
-              setSelectedUser({ volunteer: user });
+              setSelectedUser({ type: "volunteer", volunteer: user });
             }}>
             {/* Use green pin */}
             <Pin
@@ -208,6 +235,26 @@ function MapWrapper() {
           </AdvancedMarker>
         ))}
       </Map>
+      {user !== undefined && _selectedUser && selectedUser && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{header}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p>
+              {selectedUser.type === "needy"
+                ? selectedUser.needy.situation
+                : selectedUser.volunteer.offer}
+            </p>
+            <p className="text-xs mt-2 italic text-foreground/70">
+              Updated:{" "}
+              {DateTime.fromJSDate(
+                _selectedUser.updatedAt.toDate()
+              ).toRelative()}
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }

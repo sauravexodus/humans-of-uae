@@ -1,25 +1,8 @@
 ---
-import { Button } from "@/components/ui/button";
 import HomeMap from "@/components/HomeMap";
-import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import Layout from "@/layouts/Layout.astro";
 ---
 
 <Layout>
   <HomeMap client:only="react" />
-  <Card>
-    <CardHeader>
-      <CardTitle>Register yourself</CardTitle>
-    </CardHeader>
-    <CardContent>
-      <div class="flex gap-x-4">
-        <a href="/register?role=contributor" class="w-full">
-          <Button className="w-full">👋 I need help</Button>
-        </a>
-        <a href="/register?role=volunteer" class="w-full">
-          <Button className="w-full">🙏 I can help</Button>
-        </a>
-      </div>
-    </CardContent>
-  </Card>
 </Layout>
