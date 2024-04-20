@@ -170,14 +170,6 @@ function MapWrapper() {
     map.notify("markers");
   }, [needy.length, volunteers.length]);
 
-  const header = useMemo(() => {
-    if (!user) {
-      return "Still New?";
-    }
-
-    return user.displayName ?? "User Details";
-  }, [user]);
-
   const _selectedUser = useMemo(() => {
     if (selectedUser?.type === "needy") {
       return selectedUser.needy;
@@ -185,6 +177,13 @@ function MapWrapper() {
       return selectedUser.volunteer;
     }
   }, [selectedUser]);
+
+  const header = useMemo(() => {
+    if (!_selectedUser) {
+      return "Still New?";
+    }
+    return _selectedUser.name ?? "User Details";
+  }, [_selectedUser]);
 
   const { mutate: commitToHelp, isPending: isCommittingToHelp } = useMutation({
     mutationFn: async () => {
@@ -220,24 +219,33 @@ function MapWrapper() {
       return (
         <>
           <p>Situation: {selectedUser.needy.situation}</p>
-          <p className="font-semibold text-xl mt-8 mb-2">
-            Who has committed to help
-          </p>
-          {selectedUser.needy.volunteers?.map((volunteer) => (
-            <p className="text-sm">
-              {volunteer.name} ({volunteer.mobile})
-            </p>
-          )) ?? (
-            <p className="text-sm text-foreground/60">
-              No one has committed yet
-            </p>
+
+          {user ? (
+            <>
+              <p className="font-semibold text-xl mt-8 mb-2">
+                Who has committed to help
+              </p>
+              {selectedUser.needy.volunteers?.map((volunteer) => (
+                <p key={volunteer.mobile} className="text-sm">
+                  {volunteer.name} ({volunteer.mobile})
+                </p>
+              )) ?? (
+                <p className="text-sm text-foreground/60">
+                  No one has committed yet
+                </p>
+              )}
+              <Button
+                disabled={isCommittingToHelp}
+                onClick={() => commitToHelp()}
+                className="mt-4 w-full">
+                🤝 Commit to Help
+              </Button>
+            </>
+          ) : (
+            <a className="w-full" href="/register">
+              <Button className="mt-4 w-full">Register to Help</Button>
+            </a>
           )}
-          <Button
-            disabled={isCommittingToHelp}
-            onClick={() => commitToHelp()}
-            className="mt-4 w-full">
-            🤝 Commit to Help
-          </Button>
         </>
       );
     } else if (selectedUser.type === "volunteer") {
