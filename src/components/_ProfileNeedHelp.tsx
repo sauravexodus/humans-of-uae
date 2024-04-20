@@ -10,7 +10,6 @@ import { app } from "@/lib/initializeFirebase";
 import {
   collection,
   doc,
-  getDoc,
   getFirestore,
   onSnapshot,
   serverTimestamp,
