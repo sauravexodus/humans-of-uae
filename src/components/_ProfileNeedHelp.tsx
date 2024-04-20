@@ -137,10 +137,15 @@ const _ProfileNeedHelp = () => {
       if (!user) {
         return;
       }
-      await setDoc(doc(collection(getFirestore(), "users"), user.uid), {
-        offer: deleteField(),
-      });
-      setOffer(undefined);
+      await setDoc(
+        doc(collection(getFirestore(), "users"), user.uid),
+        {
+          offer: deleteField(),
+        },
+        {
+          merge: true,
+        }
+      );
       toast.success("You are no longer offering help");
     },
   });
@@ -239,7 +244,7 @@ const _ProfileNeedHelp = () => {
             className="mt-4"
             name="offer"
             rows={20}
-            value={offer}
+            value={offer ?? ""}
             onInput={({ target }) =>
               setOffer((target as HTMLInputElement).value)
             }
